@@ -1,0 +1,450 @@
+import * as fs from "fs";
+import * as vscode from "vscode";
+import { getImageMimeType } from "./utils/imageUtils";
+import { TaskSyncWebviewProvider } from "./webview/webviewProvider";
+import type { AskUserDirective } from "./webview/webviewTypes";
+import {
+	appendAutoAppendText,
+	buildFinalResponseText,
+	debugLog,
+} from "./webview/webviewUtils";
+
+export interface Input {
+	question: string;
+	session_id: string;
+}
+
+/**
+ * Build the final response string with auto-append and always-append-reminder logic.
+ * Extracted from invoke() for testability.
+ */
+export function buildFinalResponse(
+	response: string,
+	autoAppendEnabled: boolean,
+	autoAppendText: string,
+	alwaysAppendReminder: boolean,
+): string {
+	return buildFinalResponseText(
+		response,
+		autoAppendEnabled,
+		autoAppendText,
+		alwaysAppendReminder,
+	);
+}
+
+export interface AskUserToolResult {
+	response: string;
+	attachments: string[];
+	queue: boolean;
+	autoAppendEnabled: boolean;
+	autoAppendText: string;
+	sessionId: string;
+	directive?: AskUserDirective;
+}
+
+function buildAssignedSessionInstruction(sessionId: string): string {
+	return `TaskSync assigned session_id "${sessionId}". Normal chat is invisible here. Use this exact session_id on every ask_user call. Do not reply in plain chat. CALL ask_user again now with session_id "${sessionId}".`;
+}
+
+function buildBootstrapDirective(sessionId: string): AskUserDirective {
+	return {
+		kind: "bootstrap",
+		reason: "auto_assigned_session",
+		action: "call_ask_user_again",
+		sessionId,
+	};
+}
+
+function toDirectivePayload(directive: AskUserDirective): {
+	kind: AskUserDirective["kind"];
+	reason: AskUserDirective["reason"];
+	action: AskUserDirective["action"];
+	session_id?: string;
+	reask_exact_same_question?: boolean;
+} {
+	return {
+		kind: directive.kind,
+		reason: directive.reason,
+		action: directive.action,
+		...(directive.sessionId ? { session_id: directive.sessionId } : {}),
+		...(directive.reaskExactSameQuestion
+			? { reask_exact_same_question: true }
+			: {}),
+	};
+}
+
+/**
+ * Reads a file as Uint8Array for efficient binary handling
+ */
+async function readFileAsBuffer(filePath: string): Promise<Uint8Array> {
+	const buffer = await fs.promises.readFile(filePath);
+	return new Uint8Array(buffer);
+}
+
+/**
+ * Creates a cancellation promise with proper cleanup to prevent memory leaks.
+ * Returns both the promise and a dispose function to clean up the event listener.
+ */
+function createCancellationPromise(token: vscode.CancellationToken): {
+	promise: Promise<never>;
+	dispose: () => void;
+} {
+	let disposable: vscode.Disposable | undefined;
+
+	const promise = new Promise<never>((_, reject) => {
+		if (token.isCancellationRequested) {
+			reject(new vscode.CancellationError());
+			return;
+		}
+		disposable = token.onCancellationRequested(() => {
+			reject(new vscode.CancellationError());
+		});
+	});
+
+	return {
+		promise,
+		dispose: () => disposable?.dispose(),
+	};
+}
+
+/**
+ * Core logic to ask user, reusable by extension tool handlers.
+ * Queue handling and history tracking is done in waitForUserResponse()
+ */
+export async function askUser(
+	params: Input,
+	provider: TaskSyncWebviewProvider,
+	token: vscode.CancellationToken,
+): Promise<AskUserToolResult> {
+	const rawSessionId = params.session_id;
+	let effectiveSessionId =
+		(typeof rawSessionId === "string"
+			? rawSessionId
+			: typeof rawSessionId === "number"
+				? String(rawSessionId)
+				: ""
+		).trim() || "";
+	// Treat "auto" as a bootstrap signal — same as missing
+	if (effectiveSessionId.toLowerCase() === "auto") {
+		effectiveSessionId = "";
+	}
+	let autoAssignedSessionId: string | undefined;
+	debugLog(
+		"[TaskSync] askUser invoked — session_id:",
+		effectiveSessionId || "<missing>",
+		"question:",
+		params.question.slice(0, 80),
+	);
+	// Check if already cancelled before starting
+	if (token.isCancellationRequested) {
+		debugLog("[TaskSync] askUser — already cancelled before starting");
+		throw new vscode.CancellationError();
+	}
+
+	if (!effectiveSessionId) {
+		const assignedSession = provider.createSessionForMissingId();
+		autoAssignedSessionId = assignedSession.id;
+		effectiveSessionId = assignedSession.id;
+		debugLog(
+			"[TaskSync] askUser — auto-assigned missing session_id:",
+			autoAssignedSessionId,
+		);
+	}
+
+	// Create cancellation promise with cleanup capability
+	const cancellation = createCancellationPromise(token);
+
+	try {
+		// Race the user response against cancellation
+		const result = await Promise.race([
+			provider.waitForUserResponse(params.question, effectiveSessionId),
+			cancellation.promise,
+		]);
+
+		// Handle case where request was superseded by another call.
+		// IMPORTANT: Do NOT throw CancellationError here — that kills the entire
+		// ToolCallingLoop in VS Code's Copilot Chat (buildPrompt2 checks isCancelled
+		// on tool results and throws CancellationError, _runLoop catches it and breaks).
+		// Instead, return the cancelled message as a normal result so the LLM sees it
+		// and can call ask_user again. Real user cancellation (Stop button) is handled
+		// by the CancellationToken/createCancellationPromise path which correctly throws.
+		if (result.cancelled) {
+			let cancelledResponse = result.value;
+			if (autoAssignedSessionId) {
+				cancelledResponse = appendAutoAppendText(
+					cancelledResponse,
+					buildAssignedSessionInstruction(autoAssignedSessionId),
+				);
+			}
+			debugLog(
+				"[TaskSync] askUser — superseded/cancelled, response:",
+				cancelledResponse.slice(0, 80),
+			);
+			return {
+				response: cancelledResponse,
+				attachments: [],
+				queue: result.queue,
+				autoAppendEnabled: false,
+				autoAppendText: "",
+				sessionId: effectiveSessionId,
+				directive: result.directive,
+			};
+		}
+		debugLog(
+			"[TaskSync] askUser — user responded:",
+			result.value.slice(0, 80),
+			"attachments:",
+			result.attachments?.length ?? 0,
+		);
+
+		let responseText = result.value;
+		const validAttachments: string[] = [];
+
+		// Process attachments to resolve context content
+		if (result.attachments && result.attachments.length > 0) {
+			for (const att of result.attachments) {
+				if (att.uri.startsWith("context://")) {
+					// Start of context content
+					responseText += `\n\n[Attached Context: ${att.name}]\n`;
+
+					const content = await provider.resolveContextContent(att.uri);
+					if (content) {
+						responseText += content;
+					} else {
+						responseText += "(Context content not available)";
+					}
+
+					// End of context content
+					responseText += "\n[End of Context]\n";
+				} else {
+					// Regular file attachment
+					validAttachments.push(att.uri);
+				}
+			}
+		}
+
+		if (autoAssignedSessionId) {
+			responseText = appendAutoAppendText(
+				responseText,
+				buildAssignedSessionInstruction(autoAssignedSessionId),
+			);
+		}
+
+		debugLog(
+			"[TaskSync] askUser — returning result to AI (response length:",
+			responseText.length,
+			", attachments:",
+			validAttachments.length,
+			") — AI should call askUser again next",
+		);
+		// Carry the responding session's auto-append settings so invoke()
+		// applies the correct session's settings — not the active session mirrors.
+		const respondingSession =
+			provider._sessionManager?.getSession?.(effectiveSessionId);
+		return {
+			response: responseText,
+			attachments: validAttachments,
+			queue: result.queue,
+			autoAppendEnabled: respondingSession?.autoAppendEnabled === true,
+			autoAppendText:
+				typeof respondingSession?.autoAppendText === "string"
+					? respondingSession.autoAppendText
+					: "",
+			sessionId: effectiveSessionId,
+			directive: autoAssignedSessionId
+				? buildBootstrapDirective(effectiveSessionId)
+				: result.directive,
+		};
+	} catch (error) {
+		// Re-throw cancellation errors without logging (they're expected)
+		if (error instanceof vscode.CancellationError) {
+			throw error;
+		}
+		// Log other errors
+		console.error(
+			"[TaskSync] askUser error:",
+			error instanceof Error ? error.message : error,
+		);
+		// Show error to user so they know something went wrong
+		vscode.window.showErrorMessage(
+			`TaskSync: ${error instanceof Error ? error.message : "Failed to show question"}`,
+		);
+		return {
+			response: "",
+			attachments: [],
+			queue: false,
+			autoAppendEnabled: false,
+			autoAppendText: "",
+			sessionId: effectiveSessionId,
+		};
+	} finally {
+		// Always clean up the cancellation listener to prevent memory leaks
+		cancellation.dispose();
+	}
+}
+
+export function registerTools(
+	context: vscode.ExtensionContext,
+	provider: TaskSyncWebviewProvider,
+): void {
+	// Register ask_user tool (VS Code native LM tool)
+	const askUserTool = vscode.lm.registerTool("ask_user", {
+		prepareInvocation(
+			options: vscode.LanguageModelToolInvocationPrepareOptions<Input>,
+		) {
+			const rawQuestion =
+				typeof options?.input?.question === "string"
+					? options.input.question
+					: "";
+			const questionPreview = rawQuestion.trim().replace(/\s+/g, " ");
+
+			const MAX_PREVIEW_LEN = 40;
+			const truncated =
+				questionPreview.length > MAX_PREVIEW_LEN
+					? questionPreview.slice(0, MAX_PREVIEW_LEN - 3) + "..."
+					: questionPreview;
+
+			return {
+				invocationMessage: truncated ? `ask_user: ${truncated}` : "ask_user",
+			};
+		},
+		async invoke(
+			options: vscode.LanguageModelToolInvocationOptions<Input>,
+			token: vscode.CancellationToken,
+		) {
+			const params = options.input;
+			const safeQuestion =
+				typeof params?.question === "string" ? params.question : "";
+
+			debugLog(
+				"[TaskSync] LM tool invoke — question:",
+				safeQuestion.slice(0, 60),
+			);
+			try {
+				const rawSid = params?.session_id;
+				const safeSessionId =
+					typeof rawSid === "string"
+						? rawSid
+						: typeof rawSid === "number"
+							? String(rawSid)
+							: "";
+				const result = await askUser(
+					{ question: safeQuestion, session_id: safeSessionId },
+					provider,
+					token,
+				);
+
+				// Build response with auto-append logic.
+				// Use the responding session's auto-append settings (carried through
+				// AskUserToolResult) — not provider mirrors which reflect the *active*
+				// session and would leak across sessions.
+				const finalResponse = buildFinalResponse(
+					result.response,
+					result.autoAppendEnabled,
+					result.autoAppendText,
+					provider._alwaysAppendReminder,
+				);
+
+				const resultPayload: {
+					session_id: string;
+					response: string;
+					directive?: {
+						kind: AskUserDirective["kind"];
+						reason: AskUserDirective["reason"];
+						action: AskUserDirective["action"];
+						session_id?: string;
+						reask_exact_same_question?: boolean;
+					};
+					queued?: boolean;
+					attachmentCount?: number;
+				} = {
+					session_id: result.sessionId,
+					response: finalResponse,
+				};
+
+				if (result.directive) {
+					resultPayload.directive = toDirectivePayload(result.directive);
+				}
+
+				if (result.queue) {
+					resultPayload.queued = true;
+				}
+
+				if (result.attachments.length > 0) {
+					resultPayload.attachmentCount = result.attachments.length;
+				}
+
+				// Build result parts - text first, then images
+				const resultParts: (
+					| vscode.LanguageModelTextPart
+					| vscode.LanguageModelDataPart
+				)[] = [new vscode.LanguageModelTextPart(JSON.stringify(resultPayload))];
+
+				// Add image attachments as LanguageModelDataPart for vision models
+				if (result.attachments && result.attachments.length > 0) {
+					const imagePromises = result.attachments.map(async (uri) => {
+						try {
+							const fileUri = vscode.Uri.parse(uri);
+							const filePath = fileUri.fsPath;
+
+							// Check if file exists
+							try {
+								await fs.promises.access(filePath);
+							} catch {
+								console.error(
+									"[TaskSync] Attachment file does not exist:",
+									filePath,
+								);
+								return null;
+							}
+
+							const mimeType = getImageMimeType(filePath);
+
+							// Only process image files (skip non-image attachments)
+							if (mimeType !== "application/octet-stream") {
+								const data = await readFileAsBuffer(filePath);
+								const dataPart = vscode.LanguageModelDataPart.image(
+									data,
+									mimeType,
+								);
+								return dataPart;
+							}
+							return null;
+						} catch (error) {
+							console.error(
+								"[TaskSync] Failed to read image attachment:",
+								error,
+							);
+							return null;
+						}
+					});
+
+					const imageParts = await Promise.all(imagePromises);
+					for (const part of imageParts) {
+						if (part !== null) {
+							resultParts.push(part);
+						}
+					}
+				}
+
+				debugLog(
+					"[TaskSync] LM tool — returning LanguageModelToolResult to AI (parts:",
+					resultParts.length,
+					")",
+				);
+				return new vscode.LanguageModelToolResult(resultParts);
+			} catch (err: unknown) {
+				if (err instanceof vscode.CancellationError) {
+					throw err;
+				}
+				const message = err instanceof Error ? err.message : "Unknown error";
+				console.error("[TaskSync] LM tool invoke error:", message);
+				return new vscode.LanguageModelToolResult([
+					new vscode.LanguageModelTextPart("Error: " + message),
+				]);
+			}
+		},
+	});
+
+	context.subscriptions.push(askUserTool);
+}

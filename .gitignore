@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.node_modules
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.serena/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+debug_buttons.html
+js_test.html
+monitor.prd
+.tasksync

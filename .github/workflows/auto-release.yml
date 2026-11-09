@@ -1,0 +1,108 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or commit to release"
+        required: true
+        default: "main"
+      release_notes:
+        description: "Optional GitHub release notes"
+        required: false
+        default: ""
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: tasksync-chat
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tasksync-chat/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Read release metadata
+        id: release_meta
+        run: |
+          cd ..
+          VERSION=$(node -p "require('./tasksync-chat/package.json').version")
+          TAG="v$VERSION"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error title=Existing tag::$TAG already exists. Bump tasksync-chat/package.json before running a new release."
+            exit 1
+          fi
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Package extension
+        run: vsce package
+
+      - name: Publish to VS Code Marketplace
+        run: vsce publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Compose release notes
+        id: release_notes
+        run: |
+          BODY_FILE=$(mktemp)
+
+          {
+            echo "## TaskSync v${{ steps.release_meta.outputs.version }}"
+            echo
+            echo "Released manually from ref \`${{ inputs.ref }}\`."
+
+            if [ -n "${{ inputs.release_notes }}" ]; then
+              echo
+              printf '%s\n' "${{ inputs.release_notes }}"
+            fi
+          } > "$BODY_FILE"
+
+          {
+            echo "body<<EOF"
+            cat "$BODY_FILE"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: TaskSync v${{ steps.release_meta.outputs.version }}
+          target_commitish: ${{ inputs.ref }}
+          files: tasksync-chat/*.vsix
+          generate_release_notes: false
+          body: ${{ steps.release_notes.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: tasksync-chat/*.vsix
