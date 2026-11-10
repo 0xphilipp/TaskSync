@@ -808,7 +808,7 @@ describe("waitForUserResponse — session_id defensive validation", () => {
 		expect(result.cancelled).toBe(true);
 		expect(result.value).toContain("REJECTED. session_id IS REQUIRED.");
 		expect(result.value).toContain(
-			"CALL ask_user AGAIN WITH A VALID session_id.",
+			"CALL tasksync_ask_user AGAIN WITH A VALID session_id.",
 		);
 		expect(result.directive).toMatchObject({
 			kind: "rejected",
@@ -859,7 +859,7 @@ describe("waitForUserResponse — session_id defensive validation", () => {
 		expect(result.cancelled).toBe(true);
 		expect(result.value).toContain('REJECTED. session_id "5" IS TERMINATED.');
 		expect(result.value).toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(result.directive).toMatchObject({
 			kind: "rejected",
@@ -920,7 +920,7 @@ describe("waitForUserResponse — session_id defensive validation", () => {
 		);
 		expect(result.value).toContain("START A NEW CHAT TO GET A NEW session_id.");
 		expect(result.value).not.toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(result.directive).toMatchObject({
 			kind: "rejected",
@@ -990,7 +990,7 @@ describe("waitForUserResponse — session_id defensive validation", () => {
 		);
 		expect(result.value).toContain("START A NEW CHAT TO GET A NEW session_id.");
 		expect(result.value).not.toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(result.directive).toMatchObject({
 			kind: "rejected",
@@ -1014,7 +1014,7 @@ describe("waitForUserResponse — session_id defensive validation", () => {
 			'REJECTED. session_id "deleted-99" WAS DELETED.',
 		);
 		expect(result.value).toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(result.directive).toMatchObject({
 			kind: "rejected",

@@ -7,7 +7,7 @@ TaskSync is a human-in-the-loop workflow toolkit for AI-assisted development. Th
 ## Project Layout
 
 - `tasksync-chat/src/extension.ts` — Extension entry point
-- `tasksync-chat/src/tools.ts` — VS Code language model tool definitions (`ask_user`)
+- `tasksync-chat/src/tools.ts` — VS Code language model tool definitions (`tasksync_ask_user`)
 - `tasksync-chat/src/webview/webviewProvider.ts` — Orchestrator: owns state, creates webview, delegates to handlers
 - `tasksync-chat/src/webview/webviewTypes.ts` — Shared types (`P` interface, message unions)
 - `tasksync-chat/src/webview/webviewUtils.ts` — Shared helpers (`debugLog()`, `mergeAndDedup()`, `notifyQueueChanged()`)
@@ -92,7 +92,7 @@ Follow OWASP Top 10 principles. Specific patterns enforced in this codebase:
 
 ## Architecture Notes
 
-- The `ask_user` tool (registered in `tools.ts`, handled in `toolCallHandler.ts`) is the core interaction primitive.
+- The `tasksync_ask_user` tool (registered in `tools.ts`, handled in `toolCallHandler.ts`) is the core interaction primitive.
 - Queue, history, and settings are per-workspace (workspace-scoped storage with global fallback).
 - Session state uses a boolean `sessionTerminated` flag — do not use string matching for termination detection.
 - Debounced history saves (2 s) for disk I/O performance.

@@ -8,7 +8,7 @@ This file provides guidance for AI coding agents working on the TaskSync reposit
 
 TaskSync is a human-in-the-loop workflow toolkit for AI-assisted development. It provides two integration options:
 
-1. **TaskSync VS Code Extension** (`tasksync-chat/`) — A sidebar extension with smart prompt queuing, Autopilot, Consistent mode for `ask_user` behavior, and remote access with read-only Code Review.
+1. **TaskSync VS Code Extension** (`tasksync-chat/`) — A sidebar extension with smart prompt queuing, Autopilot, Consistent mode for `tasksync_ask_user` behavior, and remote access with read-only Code Review.
 2. **TaskSync Prompt** (`Prompt/`) — Terminal-based agent protocols (Markdown prompts for use as AI instructions).
 
 The primary active codebase is the VS Code extension in `tasksync-chat/`.
@@ -42,7 +42,7 @@ TaskSync/
     │       ├── webviewTypes.ts     # Shared types (P interface, message unions)
     │       ├── webviewUtils.ts     # Shared helpers (debugLog, mergeAndDedup, etc.)
     │       ├── messageRouter.ts    # Webview ↔ extension message dispatch
-    │       ├── toolCallHandler.ts  # ask_user tool lifecycle and AI turn tracking
+    │       ├── toolCallHandler.ts  # tasksync_ask_user tool lifecycle and AI turn tracking
     │       ├── choiceParser.ts     # Parse approval/choice questions into UI buttons
     │       ├── queueHandlers.ts    # Queue operations (add, remove, reorder, toggle)
     │       ├── lifecycleHandlers.ts# Setup, dispose, new session
@@ -123,9 +123,9 @@ These principles are mandatory for all changes:
 
 ## Key Architectural Notes
 
-- The `ask_user` VS Code language model tool is the core interaction primitive. It is registered in `tools.ts` and handled in `toolCallHandler.ts`.
-- The `ask_user` input schema only accepts `question`
-- The `ask_user` result payload is compact by design:
+- The `tasksync_ask_user` VS Code language model tool is the core interaction primitive. It is registered in `tools.ts` and handled in `toolCallHandler.ts`.
+- The `tasksync_ask_user` input schema only accepts `question`
+- The `tasksync_ask_user` result payload is compact by design:
     - `response` is always included
     - `queued` is only included when `true`
     - `attachmentCount` is only included when greater than `0`

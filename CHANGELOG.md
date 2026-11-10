@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## TaskSync v3.0.11 (11-09-26)
+- fix: rename VS Code LM tool from `ask_user` to `tasksync_ask_user` to avoid naming conflicts with Copilot's built-in tool
+
 ## TaskSync v3.0.10 (04-03-26)
 - feat: add agent orchestration toggle, single-session routing mode, and always-returned session_id tool payloads
 - fix: tighten the gap below the view toolbar, focus dialogs on open, and let TaskSync dialogs close on `Escape`

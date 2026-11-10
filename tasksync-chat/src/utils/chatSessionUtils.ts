@@ -34,7 +34,7 @@ export async function startNewSessionChat(
 	initialPrompt?: string,
 	fallbackChatCommand?: string,
 ): Promise<void> {
-	const sessionInstruction = `[SYSTEM]: You are operating in TaskSync Session ID: ${sessionId}. On EVERY ask_user tool call, you MUST include "session_id": "${sessionId}" in the tool input. Never omit it and never use a different value.`;
+	const sessionInstruction = `[SYSTEM]: You are operating in TaskSync Session ID: ${sessionId}. On EVERY tasksync_ask_user tool call, you MUST include "session_id": "${sessionId}" in the tool input. Never omit it and never use a different value.`;
 	const fullQuery = initialPrompt
 		? `${sessionInstruction}\n\n${initialPrompt}`
 		: sessionInstruction;

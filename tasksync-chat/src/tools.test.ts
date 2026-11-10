@@ -539,7 +539,7 @@ describe("askUser cancellation handling", () => {
 			"START A NEW CHAT TO GET A NEW session_id.",
 		);
 		expect(parsed.response).not.toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(parsed.directive).toEqual({
 			kind: "rejected",
@@ -592,7 +592,7 @@ describe("askUser cancellation handling", () => {
 			"START A NEW CHAT TO GET A NEW session_id.",
 		);
 		expect(parsed.response).not.toContain(
-			'CALL ask_user AGAIN WITH session_id "auto".',
+			'CALL tasksync_ask_user AGAIN WITH session_id "auto".',
 		);
 		expect(parsed.directive).toEqual({
 			kind: "rejected",
@@ -772,7 +772,7 @@ describe("askUser session_id coercion", () => {
 		expect(provider.waitForUserResponse).toHaveBeenCalledWith("Null?", "5");
 		expect(result.response).toContain("TaskSync assigned session_id");
 		expect(result.response).toContain("Do not reply in plain chat");
-		expect(result.response).toContain("CALL ask_user again now");
+		expect(result.response).toContain("CALL tasksync_ask_user again now");
 		expect(result.directive).toMatchObject({
 			kind: "bootstrap",
 			reason: "auto_assigned_session",
@@ -931,10 +931,10 @@ describe("askUser session_id coercion", () => {
 		);
 		expect(result.response).toContain('TaskSync assigned session_id "7"');
 		expect(result.response).toContain(
-			"Use this exact session_id on every ask_user call.",
+			"Use this exact session_id on every tasksync_ask_user call.",
 		);
 		expect(result.response).toContain(
-			'CALL ask_user again now with session_id "7".',
+			'CALL tasksync_ask_user again now with session_id "7".',
 		);
 		expect(result.directive).toMatchObject({
 			kind: "bootstrap",

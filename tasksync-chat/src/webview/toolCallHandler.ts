@@ -56,15 +56,15 @@ function buildRejectedResult(
 }
 
 function buildMissingSessionIdRejectedMessage(): string {
-	return "REJECTED. session_id IS REQUIRED. CALL ask_user AGAIN WITH A VALID session_id.";
+	return "REJECTED. session_id IS REQUIRED. CALL tasksync_ask_user AGAIN WITH A VALID session_id.";
 }
 
 function buildDeletedSessionRejectedMessage(sessionId: string): string {
-	return `REJECTED. session_id "${sessionId}" WAS DELETED. DO NOT REUSE IT. CALL ask_user AGAIN WITH session_id "auto".`;
+	return `REJECTED. session_id "${sessionId}" WAS DELETED. DO NOT REUSE IT. CALL tasksync_ask_user AGAIN WITH session_id "auto".`;
 }
 
 function buildTerminatedSessionRejectedMessage(sessionId: string): string {
-	return `REJECTED. session_id "${sessionId}" IS TERMINATED. DO NOT REUSE IT. CALL ask_user AGAIN WITH session_id "auto".`;
+	return `REJECTED. session_id "${sessionId}" IS TERMINATED. DO NOT REUSE IT. CALL tasksync_ask_user AGAIN WITH session_id "auto".`;
 }
 
 /**

@@ -43,7 +43,7 @@ export interface AskUserToolResult {
 }
 
 function buildAssignedSessionInstruction(sessionId: string): string {
-	return `TaskSync assigned session_id "${sessionId}". Normal chat is invisible here. Use this exact session_id on every ask_user call. Do not reply in plain chat. CALL ask_user again now with session_id "${sessionId}".`;
+	return `TaskSync assigned session_id "${sessionId}". Normal chat is invisible here. Use this exact session_id on every tasksync_ask_user call. Do not reply in plain chat. CALL tasksync_ask_user again now with session_id "${sessionId}".`;
 }
 
 function buildBootstrapDirective(sessionId: string): AskUserDirective {
@@ -287,8 +287,8 @@ export function registerTools(
 	context: vscode.ExtensionContext,
 	provider: TaskSyncWebviewProvider,
 ): void {
-	// Register ask_user tool (VS Code native LM tool)
-	const askUserTool = vscode.lm.registerTool("ask_user", {
+	// Register tasksync_ask_user tool (VS Code native LM tool)
+	const askUserTool = vscode.lm.registerTool("tasksync_ask_user", {
 		prepareInvocation(
 			options: vscode.LanguageModelToolInvocationPrepareOptions<Input>,
 		) {
@@ -305,7 +305,9 @@ export function registerTools(
 					: questionPreview;
 
 			return {
-				invocationMessage: truncated ? `ask_user: ${truncated}` : "ask_user",
+				invocationMessage: truncated
+					? `tasksync_ask_user: ${truncated}`
+					: "tasksync_ask_user",
 			};
 		},
 		async invoke(

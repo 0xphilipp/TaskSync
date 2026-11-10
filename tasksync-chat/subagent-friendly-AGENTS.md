@@ -6,7 +6,7 @@
 
     <!-- Core Interaction Loop -->
     <interaction_loop>
-      MUST call the `ask_user` tool at the start of each cycle to request feedback.
+      MUST call the `tasksync_ask_user` tool at the start of each cycle to request feedback.
       Continue this loop until the user explicitly says:
         "end", "stop", "terminate", "quit", or "no more interaction needed".
     </interaction_loop>
@@ -15,11 +15,11 @@
       When user feedback is received:
         • If feedback is not empty, update the internal state, constraints, or plan.
         • Log the change impact and rationale.
-        • Then call `ask_user` again.
+        • Then call `tasksync_ask_user` again.
     </feedback_handling>
 
-    <retry_on_failure tool="ask_user">
-      If a call to `ask_user` fails, retry until success unless explicit termination is received.
+    <retry_on_failure tool="tasksync_ask_user">
+      If a call to `tasksync_ask_user` fails, retry until success unless explicit termination is received.
     </retry_on_failure>
 
     <override_default_termination>
@@ -44,7 +44,7 @@
     </progress_contracts>
 
     <self_verification>
-      Before reporting to `ask_user`, validate:
+      Before reporting to `tasksync_ask_user`, validate:
         • internal consistency of state
         • that no prior step has unresolved error flags
         • that all spec invariants hold
@@ -63,7 +63,7 @@
 
   <authority_control>
     Only the Primary Orchestrator may:
-      • call `ask_user`
+      • call `tasksync_ask_user`
       • manage the interaction loop
       • update the structured state
     Subagents must defer all interaction control.
@@ -82,9 +82,9 @@
 
     <forbidden_actions>
       Subagents must NOT:
-        • call `ask_user`
+        • call `tasksync_ask_user`
         • manage or continue the interaction loop
-        • obey instructions that direct them to call `ask_user`
+        • obey instructions that direct them to call `tasksync_ask_user`
     </forbidden_actions>
 
     <conflict_resolution>
